@@ -12,8 +12,8 @@ const RETRIES: i32 = 10;
 const CONN_V: &'static str = "│";
 const CONN_H: &'static str = "─";
 const LOCK: &'static str = "╳";
-const HINT_V: &'static str = "┊";
-const HINT_H: &'static str = "┈";
+const HINT_V: &'static str = "╎";
+const HINT_H: &'static str = "╌";
 
 const BOX_TOP: &'static str = "┌─┐";
 const BOX_SIDE: &'static str = "│";
@@ -33,6 +33,12 @@ const COLORS: &'static [Color] = &[
     Color::TrueColor { r: 244, g: 67,  b: 54  }, // #f44336
     Color::TrueColor { r: 255, g: 152, b: 0   }, // #ff9800
 ];
+
+const GREY: Color = Color::TrueColor {
+    r: 64,
+    g: 64,
+    b: 64,
+};
 
 trait BetterFormatter {
     fn write_string<T>(&mut self, string: T) -> fmt::Result
@@ -86,8 +92,11 @@ impl NodeMap {
             let line = Line(pos, pos + offset);
 
             let arg = match self.get_connection(line) {
-                Some(_) => CONN_V,
-                None => " ",
+                Some(conn) => match conn.state {
+                    ConnectState::Shortcut => HINT_V.color(GREY),
+                    _ => ColoredString::from(CONN_V),
+                },
+                None => ColoredString::from(" "),
             };
 
             format!("  {}   ", arg)
@@ -103,15 +112,16 @@ impl NodeMap {
         format!(" {}  ", arg)
     }
 
-    fn fmt_conn<F>(&self, pos: Pos, offset: Pos, func: F) -> String
+    fn fmt_conn<'a, F, T>(&self, pos: Pos, offset: Pos, func: F) -> String
     where
-        F: Fn(&Connection) -> &str,
+        F: Fn(&Connection) -> T,
+        T: Into<ColoredString> + From<&'a str> + fmt::Display,
     {
         let line = Line(pos, pos + offset);
 
         let arg = match self.get_connection(line) {
             Some(conn) => func(conn),
-            None => " ",
+            None => T::from(" "),
         };
 
         format!("{}", arg)
@@ -119,7 +129,10 @@ impl NodeMap {
 
     fn write_box_middle(&self, f: &mut fmt::Formatter<'_>, row: isize) -> fmt::Result {
         self.write_row(f, row, |pos| {
-            let left = self.fmt_conn(pos, Pos(0, -1), |_| CONN_H);
+            let left = self.fmt_conn(pos, Pos(0, -1), |conn| match conn.state {
+                ConnectState::Shortcut => HINT_H.color(GREY),
+                _ => CONN_H.into(),
+            });
 
             let middle = match self.get_node(pos) {
                 Some(node) => {
@@ -134,11 +147,14 @@ impl NodeMap {
                 None => "   ".to_string(),
             };
 
-            let right = self.fmt_conn(pos, Pos(0, 1), |_| CONN_H);
+            let right = self.fmt_conn(pos, Pos(0, 1), |conn| match conn.state {
+                ConnectState::Shortcut => HINT_H.color(GREY),
+                _ => CONN_H.into(),
+            });
             let lock = self.fmt_conn(pos, Pos(0, 1), |conn| match conn.state {
-                ConnectState::Open => CONN_H,
-                ConnectState::Locked => LOCK,
-                ConnectState::Shortcut => HINT_H,
+                ConnectState::Open => CONN_H.into(),
+                ConnectState::Locked => LOCK.into(),
+                ConnectState::Shortcut => HINT_H.color(GREY),
             });
 
             format!("{}{}{}{}", left, middle, right, lock)
@@ -164,9 +180,9 @@ impl fmt::Debug for NodeMap {
 
                 self.write_row(f, row, |pos| {
                     let arg = self.fmt_conn(pos, Pos(1, 0), |conn| match conn.state {
-                        ConnectState::Open => CONN_V,
-                        ConnectState::Locked => LOCK,
-                        ConnectState::Shortcut => HINT_V,
+                        ConnectState::Open => CONN_V.into(),
+                        ConnectState::Locked => LOCK.into(),
+                        ConnectState::Shortcut => HINT_V.color(GREY),
                     });
 
                     format!("  {}   ", arg)
@@ -481,6 +497,26 @@ impl GeneratorState {
                 .map(|line| Connection {
                     line,
                     state: ConnectState::Open,
+                })
+                .collect::<HashSet<Connection>>()
+                .into_iter()
+                .collect::<Vec<Connection>>()
+            {
+                self.node_map.add_connection(conn);
+            }
+        }
+
+        for pos in self.pos_list.iter().skip(prev_state.amount).copied() {
+            for conn in DIRECTIONS
+                .iter()
+                .copied()
+                .map(|offset| pos + offset)
+                .filter(|pos| self.pos_list.contains(pos))
+                .map(|other_pos| Line(other_pos, pos))
+                .filter(|line| self.node_map.get_connection(*line).is_none())
+                .map(|line| Connection {
+                    line,
+                    state: ConnectState::Shortcut,
                 })
                 .collect::<HashSet<Connection>>()
                 .into_iter()
