@@ -25,7 +25,14 @@ impl PartialEq for Line {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ConnectState {
+    Open,
+    Locked,
+    Shortcut,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Connection {
     pub line: Line,
-    pub locked: bool,
+    pub state: ConnectState,
 }

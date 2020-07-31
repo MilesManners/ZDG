@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fmt;
 
 use crate::node::Node;
-use crate::pos::{Connection, Line, Pos};
+use crate::pos::{ConnectState, Connection, Line, Pos};
 
 const DIRECTIONS: &'static [Pos] = &[Pos(-1, 0), Pos(1, 0), Pos(0, -1), Pos(0, 1)];
 const RETRIES: i32 = 10;
@@ -12,8 +12,8 @@ const RETRIES: i32 = 10;
 const CONN_V: &'static str = "│";
 const CONN_H: &'static str = "─";
 const LOCK: &'static str = "╳";
-// const HINT_V: &'static str = "┊";
-// const HINT_H: &'static str = "┈";
+const HINT_V: &'static str = "┊";
+const HINT_H: &'static str = "┈";
 
 const BOX_TOP: &'static str = "┌─┐";
 const BOX_SIDE: &'static str = "│";
@@ -135,9 +135,10 @@ impl NodeMap {
             };
 
             let right = self.fmt_conn(pos, Pos(0, 1), |_| CONN_H);
-            let lock = self.fmt_conn(pos, Pos(0, 1), |conn| match conn.locked {
-                true => LOCK,
-                false => CONN_H,
+            let lock = self.fmt_conn(pos, Pos(0, 1), |conn| match conn.state {
+                ConnectState::Open => CONN_H,
+                ConnectState::Locked => LOCK,
+                ConnectState::Shortcut => HINT_H,
             });
 
             format!("{}{}{}{}", left, middle, right, lock)
@@ -162,9 +163,10 @@ impl fmt::Debug for NodeMap {
                 self.vertical_conn(f, row, Pos(1, 0))?;
 
                 self.write_row(f, row, |pos| {
-                    let arg = self.fmt_conn(pos, Pos(1, 0), |conn| match conn.locked {
-                        true => LOCK,
-                        false => CONN_V,
+                    let arg = self.fmt_conn(pos, Pos(1, 0), |conn| match conn.state {
+                        ConnectState::Open => CONN_V,
+                        ConnectState::Locked => LOCK,
+                        ConnectState::Shortcut => HINT_V,
                     });
 
                     format!("  {}   ", arg)
@@ -363,7 +365,7 @@ impl GeneratorState {
                     .choose(rng)
                     .unwrap(),
             ),
-            locked: true,
+            state: ConnectState::Locked,
         });
 
         let key_pos = self
@@ -436,7 +438,10 @@ impl GeneratorState {
 
     fn generate_connections(&mut self) {
         let prev_state = self.prev_state.as_ref().unwrap();
-        let locked = prev_state.prev_state.is_some();
+        let state = match prev_state.prev_state {
+            Some(_) => ConnectState::Locked,
+            None => ConnectState::Open,
+        };
 
         let prev_pos_list = prev_state
             .pos_list
@@ -452,7 +457,7 @@ impl GeneratorState {
                 .map(|offset| pos + offset)
                 .filter(|pos| prev_pos_list.contains(pos))
                 .map(|other_pos| Line(other_pos, pos))
-                .map(|line| Connection { line, locked })
+                .map(|line| Connection { line, state })
                 .collect::<Vec<Connection>>()
             {
                 self.node_map.add_connection(conn);
@@ -475,7 +480,7 @@ impl GeneratorState {
                 .map(|other_pos| Line(other_pos, pos))
                 .map(|line| Connection {
                     line,
-                    locked: false,
+                    state: ConnectState::Open,
                 })
                 .collect::<HashSet<Connection>>()
                 .into_iter()
