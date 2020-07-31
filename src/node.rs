@@ -17,14 +17,14 @@ const COLORS: &'static [Color] = &[
 #[derive(Clone)]
 pub struct Node {
     pub layer: u8,
-    pub has_key: bool,
+    pub key: Option<u8>,
 }
 
 impl Default for Node {
     fn default() -> Node {
         Node {
             layer: 0,
-            has_key: false,
+            key: None,
         }
     }
 }
@@ -40,12 +40,9 @@ impl Node {
 
 impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let string = self.layer.to_string().color(COLORS[self.layer as usize]);
-
-        if self.has_key {
-            f.write_fmt(format_args!("{}", string.reversed()))
-        } else {
-            f.write_fmt(format_args!("{}", string))
-        }
+        f.write_fmt(format_args!(
+            "{}",
+            self.layer.to_string().color(COLORS[self.layer as usize])
+        ))
     }
 }

@@ -124,10 +124,9 @@ impl NodeMap {
             let middle = match self.get_node(pos) {
                 Some(node) => {
                     let side = BOX_SIDE.color(color(node.layer));
-                    let middle = if node.has_key {
-                        KEY.color(color(node.layer))
-                    } else {
-                        ColoredString::from(" ")
+                    let middle = match node.key {
+                        Some(layer) => KEY.color(color(layer)),
+                        None => ColoredString::from(" "),
                     };
 
                     format!("{}{}{}", side, middle, side)
@@ -232,6 +231,8 @@ impl NodeMap {
             return Err(format!("Failed to generate after {} retries", 10));
         }
 
+        state = state.generate_final_state(&mut rng).unwrap();
+
         Ok(state.node_map.to_owned())
     }
 
@@ -318,19 +319,67 @@ impl GeneratorState {
             .iter()
             .skip(1)
             .copied()
-            .filter(|pos| !self.node_map.get_node(*pos).unwrap().has_key)
+            .filter(|pos| !self.node_map.get_node(*pos).unwrap().key.is_some())
             .choose_multiple(rng, key_amount)
         {
             next_state.node_map.set_node(
                 pos,
                 Node {
-                    has_key: true,
+                    key: Some(next_state.layer),
                     ..*next_state.node_map.get_node(pos).unwrap()
                 },
             );
         }
 
         Ok(next_state)
+    }
+
+    fn generate_final_state(
+        &self,
+        rng: &mut rand::rngs::ThreadRng,
+    ) -> Result<GeneratorState, &'static str> {
+        let mut final_state = self.clone();
+        final_state.prev_state = Some(Box::new(self.clone()));
+        final_state.layer += 1;
+
+        let end_pos = *final_state.available_spaces().iter().choose(rng).unwrap();
+
+        final_state.pos_list.push(end_pos);
+        final_state
+            .node_map
+            .set_node(end_pos, Node::with_layer(final_state.layer));
+
+        final_state.node_map.add_connection(Connection {
+            line: Line(
+                end_pos,
+                DIRECTIONS
+                    .iter()
+                    .map(|offset| end_pos + *offset)
+                    .filter(|pos| final_state.node_map.get_node(*pos).is_some())
+                    .choose(rng)
+                    .unwrap(),
+            ),
+            locked: true,
+        });
+
+        let key_pos = self
+            .pos_list
+            .iter()
+            .skip(1)
+            .copied()
+            .filter(|pos| !self.node_map.get_node(*pos).unwrap().key.is_some())
+            .choose(rng)
+            .unwrap();
+
+        final_state.node_map.set_node(
+            key_pos,
+            Node {
+                key: Some(final_state.layer),
+                ..*final_state.node_map.get_node(key_pos).unwrap()
+            },
+        );
+
+        Ok(final_state)
     }
 
     fn generate_node(&mut self, rng: &mut rand::rngs::ThreadRng) -> Result<(), &'static str> {
