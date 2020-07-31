@@ -342,7 +342,11 @@ impl GeneratorState {
         final_state.prev_state = Some(Box::new(self.clone()));
         final_state.layer += 1;
 
-        let end_pos = *final_state.available_spaces().iter().choose(rng).unwrap();
+        let end_pos = *final_state
+            .available_spaces_with_skip(0)
+            .iter()
+            .choose(rng)
+            .unwrap();
 
         final_state.pos_list.push(end_pos);
         final_state
@@ -365,7 +369,7 @@ impl GeneratorState {
         let key_pos = self
             .pos_list
             .iter()
-            .skip(1)
+            .skip(self.pos_list.len() - self.amount)
             .copied()
             .filter(|pos| !self.node_map.get_node(*pos).unwrap().key.is_some())
             .choose(rng)
@@ -403,9 +407,13 @@ impl GeneratorState {
     fn available_spaces(&self) -> Vec<Pos> {
         let prev_state = self.prev_state.as_ref().unwrap();
 
+        self.available_spaces_with_skip(prev_state.pos_list.len() - prev_state.amount)
+    }
+
+    fn available_spaces_with_skip(&self, skip: usize) -> Vec<Pos> {
         self.pos_list
             .iter()
-            .skip(prev_state.pos_list.len() - prev_state.amount)
+            .skip(skip)
             .flat_map(move |pos: &Pos| {
                 DIRECTIONS
                     .iter()
